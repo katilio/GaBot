@@ -28,8 +28,8 @@ namespace Gabot
         public static string parentDir = Environment.CurrentDirectory.ToString();
         public static string[] config = System.IO.File.ReadAllLines(parentDir + "/config.ini");
         public static string botToken = config[0].Substring(config[0].LastIndexOf('=') + 1);
-        public static ulong parentGuildId = 462664432481468416;
-        public static ulong guildChannelId = 462664432481468418;
+        public static ulong parentGuildId = ulong.Parse(config[1].Substring(config[1].LastIndexOf('=') + 1));
+        public static ulong guildChannelId = ulong.Parse(config[2].Substring(config[2].LastIndexOf('=') + 1));
 
         public async Task RunBot()
         {
@@ -41,14 +41,11 @@ namespace Gabot
                 .BuildServiceProvider();
 
             currentPolls = LoadPolls();
-
-            string parentDir = Environment.CurrentDirectory.ToString();
-            string[] config = System.IO.File.ReadAllLines(parentDir + "/config.ini");
-            string botToken = config[0].Substring(config[0].LastIndexOf('=') + 1);
    
             client.Log += Log;
             await RegisterCommand();
             await RegisterReaction();
+            await RegisterRemovedReaction();
             await client.LoginAsync(TokenType.Bot, botToken);
             await client.StartAsync();
 
@@ -91,9 +88,33 @@ namespace Gabot
             await commands.AddModulesAsync(Assembly.GetEntryAssembly());
         }
 
-        private Task HandleRemovedReaction(Cacheable<IUserMessage, ulong> arg1, ISocketMessageChannel arg2, SocketReaction arg3)
+        private async Task HandleRemovedReaction(Cacheable<IUserMessage, ulong> arg1, ISocketMessageChannel arg2, SocketReaction arg3)
         {
-            throw new NotImplementedException();
+            Console.WriteLine(arg2.Name.ToString() + " " + arg3.Emote.Name + " " + arg3.Emote.ToString());
+            foreach (Poll poll in Program.currentPolls)
+            {
+                //If message that got reacted is a message with a poll
+                if (poll.messageIDs.Contains(arg3.MessageId))
+                {
+                    int emoteIndex = 0;
+                    //If the emote name can be parsed as an int
+                    if (int.TryParse(arg3.Emote.Name.ToString().Substring(0, 1), out emoteIndex))
+                    {
+                        //If the user didn't add the movie
+                        if (poll.movieList[emoteIndex-1].addedByUser != arg3.User.ToString())
+                        { 
+                            //If the user has voted for that movie
+                            if (poll.movieList[emoteIndex - 1].votes.Contains(arg3.User.ToString()))
+                            {
+                                poll.movieList[emoteIndex - 1].votes.Remove(arg3.User.ToString());
+                                Program.SavePolls(Program.currentPolls);
+                                await arg2.SendMessageAsync($"Removing vote for movie *{poll.movieList[emoteIndex - 1].title}* from *{arg3.User.ToString()}*");
+                                await UpdateLastMessage(poll);
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         private async Task HandleReactions(Cacheable<IUserMessage, ulong> arg1, ISocketMessageChannel arg2, SocketReaction arg3)
@@ -108,17 +129,17 @@ namespace Gabot
                     //If the emote name can be parsed as an int
                     if (int.TryParse(arg3.Emote.Name.ToString().Substring(0, 1), out emoteIndex))
                     {
-                        //If the user hasn't voted for that movie yet
-                        //DEBUG
-                        if (poll.movieList[emoteIndex - 1].votes.Contains(arg3.User.ToString()))
+                        //If the voting user hasn't voted for that movie yet
+                        if (!poll.movieList[emoteIndex - 1].votes.Contains(arg3.User.ToString()))
                         {
                             //If the user has less than 2 votes in the poll (1 for added movie, 1 for vote)
                             int timesVoted = 0;
                             foreach (Movie movie in poll.movieList)
                             {
-                                if (movie.votes.Contains(arg3.User.ToString())) { timesVoted++; }
+                                if (movie.votes.Contains(arg3.User.ToString()) && !movie.addedByUser.Contains(arg3.User.ToString()))
+                                { timesVoted++; }
                             }
-                            if (timesVoted < 4) //DEBUG
+                            if (timesVoted < 1)
                             {
                                 poll.movieList[emoteIndex - 1].votes.Add(arg3.User.ToString());
                                 Program.SavePolls(Program.currentPolls);
@@ -126,7 +147,12 @@ namespace Gabot
                                 await UpdateLastMessage(poll);
                             }
                         }
-                        else await arg2.SendMessageAsync("You've already voted in that poll.");
+                        else
+                        {
+                            var user = client.GetUser(arg3.UserId);
+                            await user.SendMessageAsync($"Sorry {user.Mention}, you've already voted in that poll. <3");
+                        }
+                        //arg2.SendMessageAsync("You've already voted in that poll.");
                     }
                 }
             }
@@ -178,13 +204,15 @@ namespace Gabot
             foreach (Movie movie in poll.movieList)
             {
                 string votes = new string('X', movie.votes.Count);
+                char[] chars = new char[] { '-', 'x', '-' };
+                //string votes = new string(chars, 0, movie.votes.Count);
                 builder.AddField($"{movieNumber} - {movie.title} *({movie.addedByUser.Split('#')[0]})*", $"Votes: **|{votes}|**");
                 movieNumber++;
             }
             return builder.Build();
         }    
 
-        public async Task UpdateLastMessage(Poll poll)
+        public static async Task UpdateLastMessage(Poll poll)
         {
             if (poll.lastMessage == null)
             {
@@ -254,7 +282,30 @@ namespace Gabot
             await Context.Channel.SendMessageAsync($"{newPoll.title} created with movie {newPoll.movieList[0].title}");
         }
 
-        
+        [Command("removepoll"), RequireUserPermission(Discord.GuildPermission.MentionEveryone)]
+        public async Task RemovePoll(string pollNumber)
+        {
+            int pollIndex = 0;
+            if (int.TryParse(pollNumber, out pollIndex))
+            {
+                Program.currentPolls.RemoveAt(pollIndex - 1);
+                await Context.Channel.SendMessageAsync($"Poll number {pollIndex} removed!");
+            }
+        }
+
+        [Command("removemovie"), RequireUserPermission(Discord.GuildPermission.MentionEveryone)]
+        public async Task RemoveMovie(string pollNumber, string movieNumber)
+        {
+            int pollIndex = 0;
+            int movieIndex = 0;
+            if ((int.TryParse(pollNumber, out pollIndex) && int.TryParse(movieNumber, out movieIndex)))
+            {
+                Program.currentPolls[pollIndex - 1].movieList.RemoveAt(movieIndex-1);
+                await Context.Channel.SendMessageAsync($"Movie number {movieIndex} removed from poll {pollIndex}!");
+            }
+        }
+
+
         [Command("showpoll")]
         //public async Task ShowPoll(Poll poll, SocketCommandContext Context)
         public async Task ShowPoll([Remainder]string pollnumber)
@@ -262,7 +313,7 @@ namespace Gabot
             int pollIndex = 0;
             if (int.TryParse(pollnumber, out pollIndex))
             {
-                Program.GetLastMessage(Program.currentPolls[2]);
+                Program.GetLastMessage(Program.currentPolls[pollIndex-1]);
                 Poll poll = Program.currentPolls[pollIndex - 1];
                 var message = await Context.Channel.SendMessageAsync("", false, Program.MakePollEmbed(poll));
                 Program.currentPolls[pollIndex - 1].messageIDs.Add(message.Id);
@@ -275,12 +326,13 @@ namespace Gabot
         [Command("addmovie")]
         public async Task AddMovieAsync(int pollIndex, [Remainder]string movieTitle)
         {
+            pollIndex -= 1;
+            Poll poll = Program.currentPolls[pollIndex];
             bool alreadyAddedMovie = false;
-            //DEBUG COMMENTED OUT
-            //foreach (Movie movie in Program.currentPolls[pollIndex - 1])
-            //{
-            //    if (movie.addedByUser == Context.User.ToString()) { alreadyAddedMovie = true; }
-            //}
+            foreach (Movie movie in Program.currentPolls[pollIndex].movieList)
+            {
+                if (movie.addedByUser == Context.User.ToString()) { alreadyAddedMovie = true; break; }
+            }
             if (!alreadyAddedMovie)
             {
                 Movie newMovie = new Movie
@@ -290,11 +342,11 @@ namespace Gabot
                     votes = new List<string>()
                 };
                 newMovie.votes.Add(Context.User.Id.ToString());
-                Program.currentPolls[pollIndex - 1].movieList.Add(newMovie);
+                Program.currentPolls[pollIndex].movieList.Add(newMovie);
                 Program.SavePolls(Program.currentPolls);
-                await ShowPoll((pollIndex).ToString());
+                await Program.UpdateLastMessage(poll);
             }
-            else await Context.Channel.SendMessageAsync("You've already added a movie");
+            else await Context.User.SendMessageAsync($"Sorry {Context.User.Mention}, you've already added a movie in that poll. <3");
         }
 
         public async Task ShowNewPoll(Poll poll, SocketCommandContext Context)
@@ -312,7 +364,7 @@ namespace Gabot
             { 
                 await Task.Delay(poll.endDate - poll.startDate);
                 var destinationChannel = Context.Guild.GetTextChannel(Program.guildChannelId);
-                poll.movieList.Sort((x, y) => x.votes.Count - y.votes.Count);
+                poll.movieList.Sort((x, y) => y.votes.Count - x.votes.Count);
                 await destinationChannel.SendMessageAsync($"Poll *{poll.title}* is over! Results:");
                 await Context.Guild.GetTextChannel(462664432481468418).SendMessageAsync("", false, Program.MakePollEmbed(poll));
             }
@@ -324,7 +376,7 @@ namespace Gabot
             {
                 await Task.Delay(poll.endDate - poll.startDate);
                 var destinationChannel = Program.client.GetGuild(Program.parentGuildId).GetTextChannel(Program.guildChannelId);
-                poll.movieList.Sort((x, y) => x.votes.Count - y.votes.Count);
+                poll.movieList.Sort((x, y) => y.votes.Count - x.votes.Count);
                 await destinationChannel.SendMessageAsync($"Poll *{poll.title}* is over! Results:");
                 await destinationChannel.SendMessageAsync("", false, Program.MakePollEmbed(poll));
             }
