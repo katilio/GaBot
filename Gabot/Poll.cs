@@ -1,28 +1,47 @@
 ﻿using System;
-<<<<<<< HEAD
+using Discord.Rest;
 using System.IO;
-=======
->>>>>>> ccf0a8e... Basic command recognition, reaction handling, poll creation
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.Collections;
 
 namespace Gabot.Modules
 {
-<<<<<<< HEAD
     [Serializable]
-=======
->>>>>>> ccf0a8e... Basic command recognition, reaction handling, poll creation
-    public class Poll
+    public class Poll : IEnumerable,IEnumerator
     {
         public DateTime startDate = new DateTime();
         public DateTime endDate = new DateTime();
         public string title;
         public List<Movie> movieList = new List<Movie>();
-<<<<<<< HEAD
-        public List<string> messageIDs = new List<string>();
-=======
->>>>>>> ccf0a8e... Basic command recognition, reaction handling, poll creation
+        public List<ulong> messageIDs = new List<ulong>();
+        int position = -1;
+        [NonSerialized]
+        public RestUserMessage lastMessage;
+
+
+        public IEnumerator GetEnumerator()
+        {
+            return (IEnumerator)this;
+        }
+
+        //IEnumerator
+        public bool MoveNext()
+        {
+            position++;
+            return (position < movieList.Count());
+        }
+
+        //IEnumerable
+        public void Reset()
+        { position = 0; }
+
+        //IEnumerable
+        public object Current
+        {
+            get { return movieList[position]; }
+        }
     }
 }
