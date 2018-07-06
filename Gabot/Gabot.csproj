@@ -52,6 +52,9 @@
     <Reference Include="Discord.Net.WebSocket, Version=1.0.2.0, Culture=neutral, processorArchitecture=MSIL">
       <HintPath>..\packages\Discord.Net.WebSocket.1.0.2\lib\net45\Discord.Net.WebSocket.dll</HintPath>
     </Reference>
+    <Reference Include="DM.MovieApi, Version=0.8.2.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\packages\TheMovieDbWrapper.0.8.2\lib\netstandard1.1\DM.MovieApi.dll</HintPath>
+    </Reference>
     <Reference Include="Microsoft.Extensions.DependencyInjection, Version=2.1.1.0, Culture=neutral, PublicKeyToken=adb9793829ddae60, processorArchitecture=MSIL">
       <HintPath>..\packages\Microsoft.Extensions.DependencyInjection.2.1.1\lib\net461\Microsoft.Extensions.DependencyInjection.dll</HintPath>
     </Reference>
@@ -184,9 +187,6 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Modules\Movies.cs" />
-    <Compile Include="Modules\Polls.cs" />
-    <Compile Include="Modules\ShowPoll.cs" />
     <Compile Include="Movie.cs" />
     <Compile Include="Poll.cs" />
     <Compile Include="Program.cs" />

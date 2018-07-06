@@ -1,7 +1,9 @@
 ﻿using Discord;
 using Discord.WebSocket;
 using Discord.Commands;
+using Discord.Rest;
 using Gabot.Modules;
+using DM;
 
 using System;
 using System.Collections.Generic;
@@ -18,11 +20,16 @@ namespace Gabot
     {
         static void Main(string[] args) => new Program().RunBot().GetAwaiter().GetResult();
 
-        private DiscordSocketClient client;
+        public static DiscordSocketClient client;
         private CommandService commands;
         private IServiceProvider services;
 
         public static List<Poll> currentPolls = new List<Poll>();
+        public static string parentDir = Environment.CurrentDirectory.ToString();
+        public static string[] config = System.IO.File.ReadAllLines(parentDir + "/config.ini");
+        public static string botToken = config[0].Substring(config[0].LastIndexOf('=') + 1);
+        public static ulong parentGuildId = 462664432481468416;
+        public static ulong guildChannelId = 462664432481468418;
 
         public async Task RunBot()
         {
@@ -36,20 +43,16 @@ namespace Gabot
             currentPolls = LoadPolls();
 
             string parentDir = Environment.CurrentDirectory.ToString();
-
             string[] config = System.IO.File.ReadAllLines(parentDir + "/config.ini");
-
-            string botToken = config[0].Substring(config[0].LastIndexOf('=')+1);
-
+            string botToken = config[0].Substring(config[0].LastIndexOf('=') + 1);
+   
             client.Log += Log;
-
             await RegisterCommand();
-
             await RegisterReaction();
-
             await client.LoginAsync(TokenType.Bot, botToken);
-
             await client.StartAsync();
+
+            foreach (Poll poll in currentPolls) { await Polls.PollCountdown(poll); }
 
             await Task.Delay(-1);
         }
@@ -154,6 +157,12 @@ namespace Gabot
             }
         }
 
+        public static async Task GetLastMessage(Poll poll)
+        {
+            var message = await client.GetGuild(parentGuildId).GetTextChannel(guildChannelId).GetMessageAsync(poll.messageIDs.Last());
+            poll.lastMessage = message as RestUserMessage;
+        }
+
 
         public static Embed MakePollEmbed(Poll poll)
         {
@@ -177,10 +186,13 @@ namespace Gabot
 
         public async Task UpdateLastMessage(Poll poll)
         {
-            if (!(poll.lastMessage.Embeds == null))
+            if (poll.lastMessage == null)
             {
+                await GetLastMessage(poll);
                 await poll.lastMessage.ModifyAsync(msg => msg.Embed = MakePollEmbed(poll));
             }
+            await poll.lastMessage.ModifyAsync(msg => msg.Embed = MakePollEmbed(poll));
+
         }
 
         /// <summary>
@@ -215,6 +227,7 @@ namespace Gabot
                     var bformatter = new System.Runtime.Serialization.Formatters.Binary.BinaryFormatter();
                     stream.Position = 0;
                     List<Poll> pollList = (List<Poll>)bformatter.Deserialize(stream);
+                    foreach (Poll poll in pollList) { GetLastMessage(poll); }
                     return pollList;
                 }
             }
@@ -225,7 +238,7 @@ namespace Gabot
 
     public class Polls : ModuleBase<SocketCommandContext>
     {
-        [Command("makepoll"), RequireUserPermission(Discord.GuildPermission.ManageChannels)]
+        [Command("makepoll"), RequireUserPermission(Discord.GuildPermission.MentionEveryone)]
         public async Task CreatePoll(float length, string title, [Remainder] string movie)
         {
             Movie newMovie = new Movie();
@@ -249,10 +262,12 @@ namespace Gabot
             int pollIndex = 0;
             if (int.TryParse(pollnumber, out pollIndex))
             {
+                Program.GetLastMessage(Program.currentPolls[2]);
                 Poll poll = Program.currentPolls[pollIndex - 1];
                 var message = await Context.Channel.SendMessageAsync("", false, Program.MakePollEmbed(poll));
                 Program.currentPolls[pollIndex - 1].messageIDs.Add(message.Id);
                 Program.currentPolls[pollIndex - 1].lastMessage = message;
+                Program.SavePolls(Program.currentPolls);
             }
             else await Context.Channel.SendMessageAsync("Please add a number after the command.");
         }
@@ -286,15 +301,33 @@ namespace Gabot
         {
             var message = await Context.Channel.SendMessageAsync("", false, Program.MakePollEmbed(poll));
             poll.lastMessage = message;
+            poll.messageIDs.Add(message.Id);
+            Program.SavePolls(Program.currentPolls);
         }
 
-        public async Task PollCountdown(Poll poll, SocketCommandContext Context)
+        //Unnecessary?
+        public static async Task PollCountdown(Poll poll, SocketCommandContext Context)
         {
-            await Task.Delay(poll.endDate - poll.startDate);
-            var destinationChannel = Context.Guild.GetTextChannel(462664432481468418);
-            poll.movieList.Sort((x, y) => x.votes.Count - y.votes.Count);
-            await destinationChannel.SendMessageAsync($"Poll *{poll.title}* is over! Results:");
-            await Context.Guild.GetTextChannel(462664432481468418).SendMessageAsync("", false, Program.MakePollEmbed(poll));
+            if (poll.endDate > DateTime.Now)
+            { 
+                await Task.Delay(poll.endDate - poll.startDate);
+                var destinationChannel = Context.Guild.GetTextChannel(Program.guildChannelId);
+                poll.movieList.Sort((x, y) => x.votes.Count - y.votes.Count);
+                await destinationChannel.SendMessageAsync($"Poll *{poll.title}* is over! Results:");
+                await Context.Guild.GetTextChannel(462664432481468418).SendMessageAsync("", false, Program.MakePollEmbed(poll));
+            }
+        }
+
+        public static async Task PollCountdown(Poll poll)
+        {
+            if (poll.endDate > DateTime.Now)
+            {
+                await Task.Delay(poll.endDate - poll.startDate);
+                var destinationChannel = Program.client.GetGuild(Program.parentGuildId).GetTextChannel(Program.guildChannelId);
+                poll.movieList.Sort((x, y) => x.votes.Count - y.votes.Count);
+                await destinationChannel.SendMessageAsync($"Poll *{poll.title}* is over! Results:");
+                await destinationChannel.SendMessageAsync("", false, Program.MakePollEmbed(poll));
+            }
         }
 
         public Poll MakeNewPoll(string title, Movie movie, float days)
