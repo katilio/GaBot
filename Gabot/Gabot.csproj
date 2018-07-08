@@ -187,6 +187,7 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="PostedMessage.cs" />
     <Compile Include="Movie.cs" />
     <Compile Include="Poll.cs" />
     <Compile Include="Program.cs" />

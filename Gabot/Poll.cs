@@ -14,9 +14,16 @@ namespace Gabot.Modules
     {
         public DateTime startDate = new DateTime();
         public DateTime endDate = new DateTime();
-        public string title;
+        public string title = "Default title";
+        public string createdByUsername;
+        public ulong createdByUserId;
+        public ulong createdInGuildId;
+        public ulong createdInChannelId;
+        public bool blockOptions = false;
+        public bool blockVotes = false;
         public List<Movie> movieList = new List<Movie>();
         public List<ulong> messageIDs = new List<ulong>();
+        public List<PostedMessage> postedMessages = new List<PostedMessage>();
         int position = -1;
         [NonSerialized]
         public RestUserMessage lastMessage;
