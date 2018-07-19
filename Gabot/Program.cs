@@ -4,6 +4,7 @@ using Discord.Commands;
 using Discord.Rest;
 using Gabot.Modules;
 using DM;
+//using Google.Apis.YouTube.v3;
 
 using System;
 using System.Collections.Generic;
@@ -13,6 +14,11 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using System.Reflection;
 using System.IO;
+using System.Net.Http;
+using Com.CloudRail.SI;
+using Com.CloudRail.SI.Services;
+using Com.CloudRail.SI.ServiceCode.Commands.CodeRedirect;
+using System.Threading;
 
 namespace Gabot
 {
@@ -34,6 +40,7 @@ namespace Gabot
         public static int votesPerUser = int.Parse(config[4].Substring(config[4].LastIndexOf('=') + 1));
         public static string modPassword = config[5].Substring(config[5].LastIndexOf('=') + 1);
 
+        
 
         public async Task RunBot()
         {
@@ -47,15 +54,23 @@ namespace Gabot
             currentPolls = LoadPolls();
    
             client.Log += Log;
+            CloudRail.AppKey = "5b45f83e484e1768971200f5";
+            
+            //await Task.Run(() => YTservice.Login());
             await RegisterCommand();
             await RegisterReaction();
             await RegisterRemovedReaction();
             await client.LoginAsync(TokenType.Bot, botToken);
             await client.StartAsync();
 
-            foreach (Poll poll in currentPolls) { await Polls.PollCountdown(poll); }
-
-            await Task.Delay(-1);
+            foreach (Poll poll in currentPolls)
+            {
+                var tokenSource = new CancellationTokenSource();
+                poll.countdownToken = tokenSource;
+                //tokenSource.Cancel();
+                await Polls.PollCountdown(poll, poll.countdownToken.Token);
+            }
+                await Task.Delay(-1);
         }
 
         private Task Log(LogMessage arg)
@@ -113,7 +128,7 @@ namespace Gabot
                                 poll.movieList[emoteIndex - 1].votes.Remove(arg3.User.ToString());
                                 Program.SavePolls(Program.currentPolls);
                                 Console.WriteLine($"Removing vote for movie *{poll.movieList[emoteIndex - 1].title}* from *{arg3.User.ToString()}*");
-                                await UpdateLastMessages(poll);
+                                await UpdateLastMessages(poll, false);
                             }
                         }
                     }
@@ -149,7 +164,7 @@ namespace Gabot
                                 poll.movieList[emoteIndex - 1].votes.Add(arg3.User.ToString());
                                 Program.SavePolls(Program.currentPolls);
                                 Console.WriteLine($"Adding vote for movie *{poll.movieList[emoteIndex - 1].title}* from *{arg3.User.ToString()}*");
-                                await UpdateLastMessages(poll);
+                                await UpdateLastMessages(poll, false);
                             }
                             else
                             {
@@ -188,6 +203,7 @@ namespace Gabot
                 if (!result.IsSuccess)
                 {
                     Console.WriteLine(result.ErrorReason);
+                    await context.Channel.SendMessageAsync("Command incorrect. Use *!help* or *!modhelp password* here or via DM for more info.");
                 }
 
                 else if (message.Content.Contains("hello"))
@@ -216,7 +232,7 @@ namespace Gabot
                 Environment.NewLine + $"Ends at {poll.endDate.ToUniversalTime().ToShortTimeString()} UTC on {poll.endDate.ToLongDateString()}";
             builder.Author.Name = $"{poll.title} - Poll number #" + (Program.currentPolls.FindIndex(x => x.title == poll.title)+1).ToString();
             builder.Author.IconUrl = client.GetUser(poll.createdByUserId).GetAvatarUrl(ImageFormat.Auto, 128);
-            builder.Title = $"*created by {poll.movieList[0].addedByUser}* - ends in: " + poll.endDate.Subtract(DateTime.Now).Hours + " hours and " + poll.endDate.Subtract(DateTime.Now).Minutes + " minutes.";
+            builder.Title = $"*created by {poll.movieList[0].addedByUser}* - {(poll.endDate < DateTime.Now ? "Poll ended " + -(int)Math.Ceiling((poll.endDate - DateTime.Now).TotalHours) + " hours and " + -(poll.endDate - DateTime.Now).Minutes + " minutes ago.*" : "Poll is active, " + (int)Math.Floor((poll.endDate - DateTime.Now).TotalHours) + " hours " + (poll.endDate - DateTime.Now).Minutes + " minutes left.*")}";
             builder.ThumbnailUrl = client.GetGuild(poll.createdInGuildId).IconUrl;
             int movieNumber = 1;
             foreach (Movie movie in poll.movieList)
@@ -233,17 +249,36 @@ namespace Gabot
             return builder.Build();
         }    
 
-        public static async Task UpdateLastMessages(Poll poll)
+        public static async Task UpdateLastMessages(Poll poll, bool addReactions)
         {
             //if (poll.lastMessage == null) We want to do this for every message instead of just the last one
             foreach (PostedMessage pm in poll.postedMessages)
             {
                 poll.lastMessage = await pm.GetMessageObj(client);
                 //await GetLastMessage(poll);
-                await poll.lastMessage.ModifyAsync(msg => msg.Embed = MakePollEmbed(poll));
+                if (!(poll.lastMessage == null))
+                { 
+                    await poll.lastMessage.ModifyAsync(msg => msg.Embed = MakePollEmbed(poll));
+                    string[] pollEmotes = new string[] { "1⃣", "2⃣", "3⃣", "4⃣", "5⃣", "6⃣", "7⃣", "8⃣", "9⃣", "🔟" };
+                    int reactionIndex = 1;
+                    if (addReactions)
+                    {
+                        // Nice to have: optimize so we don't try to add reactions that already exist
+                        foreach (Movie movie in poll.movieList)
+                        {
+                            var msgReactions = poll.lastMessage.Reactions;
+                            IEmote emote = new Emoji(pollEmotes[reactionIndex - 1]);
+                            if (!msgReactions.ContainsKey(emote))
+                            { 
+                                await poll.lastMessage.AddReactionAsync(emote);
+                            }
+                            reactionIndex++;
+
+                        }
+                    }
+                }
             }
             //await poll.lastMessage.ModifyAsync(msg => msg.Embed = MakePollEmbed(poll));
-
         }
 
         /// <summary>
@@ -300,6 +335,88 @@ namespace Gabot
 
     public class Polls : ModuleBase<SocketCommandContext>
     {
+        //[Command("subs")]
+        //public async Task Subs()
+        //{
+        //    long followers = 0;
+        //    long lastFollowers = 0;
+        //    Com.CloudRail.SI.Types.ChannelMetaData result = Program.YTservice.GetChannel("UCYLHs-NR2le96KKqXofUOXg");
+        //    followers = result.GetFollowers();
+        //    Console.WriteLine(followers.ToString());
+        //    //IEmote gabberAh = new Emoji("<:gabberBliss:446167531183538206>");
+        //    IEmote y = new Emoji("🇾");
+        //    IEmote a = new Emoji("🅰");
+        //    IEmote s = new Emoji("🇸");
+        //    IEmote fire = new Emoji("🔥");
+        //    IEmote kat = new Emoji("<:katUDied:436968277067956224>");
+        //    await Context.Channel.SendMessageAsync($"Gab now has **{fire} {result.GetFollowers()} {fire} subscribers**! Only {100000 - result.GetFollowers()} left to 100k!! " + y + a + s + kat);
+        //    lastFollowers = result.GetFollowers();
+        //    bool under100k = true;
+        //    Task.Run(async () =>
+        //    {
+        //    while (under100k == true)
+        //    {
+        //        if (followers < 100000)
+        //        {
+        //            await Task.Delay(3000);
+        //            Com.CloudRail.SI.Types.ChannelMetaData result2 = Program.YTservice.GetChannel("UCYLHs-NR2le96KKqXofUOXg");
+        //            followers = result2.GetFollowers();
+        //            if (followers > lastFollowers)
+        //            {
+        //                await Context.Channel.SendMessageAsync($"Gab now has **{fire} {result2.GetFollowers()} {fire} subscribers**! Only {100000 - result2.GetFollowers()} left to 100k!! " + y + a + s + kat);
+        //                lastFollowers = result2.GetFollowers();
+        //            }
+        //        }
+        //        else under100k = false;
+        //    }
+        //    });
+        //}
+
+        [Command("help")]
+        //public async Task ShowPoll(Poll poll, SocketCommandContext Context)
+        public async Task ShowHelp()
+        {
+            EmbedBuilder builder = new EmbedBuilder();
+            builder.Title = "Command help";
+            builder.ThumbnailUrl = Program.client.CurrentUser.GetAvatarUrl(ImageFormat.Png, 128);
+            builder.AddField("`!showpoll poll_number` - (All users, can be done through DM)", "Example: '***!showpoll 1***' - Displays indicated poll in channel. Can be used in DMs.", false);
+            builder.AddField("\u200B", "\u200B");
+            builder.AddField("`!listpolls` - (All users, can be done through DM)", "Shows a list of all polls in the bot, including expired ones.", false);
+            builder.AddField("\u200B", "\u200B");
+            builder.AddField("`!addoption poll_number Movie title` - (All users, can be done through DM)", "Example: '***!addoption 1 LOTR: The Two Towers***' Displays indicated poll in channel. Can be used in DMs.", false);
+            await Context.Channel.SendMessageAsync("", false, builder.Build());
+            Console.WriteLine($"User {Context.User.Username} requested help at {DateTime.Now}.");
+        }
+
+        [Command("modhelp")]
+        //public async Task ShowPoll(Poll poll, SocketCommandContext Context)
+        public async Task ShowModHelp(string password)
+        {
+            if (password == Program.modPassword)
+            {
+                EmbedBuilder builder = new EmbedBuilder();
+                builder.Title = "Command help";
+                builder.ThumbnailUrl = Program.client.CurrentUser.GetAvatarUrl(ImageFormat.Png, 128);
+                builder.AddField("`!makepoll *length in hours* 'Poll title' Starting movie title` - (Only users that can mention @everyone, cannot be done through DMs)", "Example: ***!makepoll 48 'Friday 13th Horror Poll!' Jason X*** - Creates a poll that lasts for 48 hours and includes the mentioned movie. Results will be posted after the specified time in the channel where the poll was created. Please note the poll won't disappear until you use !removepoll.", false);
+                builder.AddField("\u200B", "\u200B");
+                builder.AddField("`!forceaddoption *poll number* 'password' Movie title` - (Mod password required, please do via DM)", "Example: ***!forceaddoption 2 modpassword The Lion King 3*** - Overrides the 'max 1 movie per user' rule and adds a new option to the poll as long as there are less than 9 already.", false);
+                builder.AddField("\u200B", "\u200B");
+                builder.AddField("`!removepoll *poll number* 'password'` - (Mod password required, please do via DM)", "Example: '***!removepoll 1 modpassword***' Deletes indicated poll.", false);
+                builder.AddField("\u200B", "\u200B");
+                builder.AddField("`!removeoption *poll number* *movie number* 'password'` - (Mod password required, please do via DM)", "Example: ***'!removeoption 1 3 modpassword'*** - Deletes movie number 3 in poll number 1.", false);
+                builder.AddField("\u200B", "\u200B");
+                builder.AddField("`!lock/unlockvotes *poll number* 'password'` - (Mod password required, please do via DM)", "Example: '***!lockvotes 2 modpassword***' Locks voting in poll 2. No new votes accepted, can't remove votes either.", false);
+                builder.AddField("\u200B", "\u200B");
+                builder.AddField("`!lock/unlockoptions *poll number* 'password'` - (Mod password required, please do via DM)", "Example: '***!unlockoptions 3 modpassword***' Unlocks options in poll 3. No movies can be added or removed.", false);
+                builder.AddField("\u200B", "\u200B");
+                builder.AddField("`!edittitle *poll number* 'password' 'New title'` - (Mod password required, please do via DM)", "Example: '***!edittitle 1 modpassword New poll title***' Edits the title of poll 1.", false);
+                builder.AddField("\u200B", "\u200B");
+                builder.AddField("`!edittime *poll number* 'password' 'amount of time'` - (Mod password required, please do via DM)", "Example: '***!edittime 3 modpassword 2***' Extends the duration of poll 3 by 2 hours. Use a negative number to remove time, and decimals if you need values smaller than an hour. '-1.5' will make the poll end 90 minutes earlier. Once expired, polls can be extended but votes and options need to be unlocked manually.", false);
+                await Context.Channel.SendMessageAsync("", false, builder.Build());
+            }
+            else await Context.User.SendMessageAsync("Incorrect password. Please write the command again as *!modhelp Password*.");
+        }
+
         [Command("makepoll"), RequireUserPermission(Discord.GuildPermission.MentionEveryone)]
         public async Task CreatePoll(float length, string title, [Remainder] string movie)
         {
@@ -312,8 +429,35 @@ namespace Gabot
             Program.currentPolls.Add(newPoll);
             Program.SavePolls(Program.currentPolls);
             await ShowPoll(newPoll, Context);
-            PollCountdown(newPoll);
+            PollCountdown(newPoll, newPoll.countdownToken.Token);
             Console.WriteLine($"{newPoll.title} created with movie {newPoll.movieList[0].title}, by {newPoll.createdByUsername} id {newPoll.createdByUserId}, in guild {newPoll.createdInGuildId} and channel {newPoll.createdInGuildId} for {length} hours");
+        }
+
+        [Command("edittitle")]
+        public async Task EditPoll(int pollNumber, string password, [Remainder] string NewTitle)
+        {
+            if (password == Program.modPassword)
+            {
+                Program.currentPolls[pollNumber - 1].title = NewTitle;
+                Program.SavePolls(Program.currentPolls);
+                await Program.UpdateLastMessages(Program.currentPolls[pollNumber - 1], false);
+            }
+        }
+
+        [Command("edittime")]
+        public async Task EditTime(int pollNumber, string password, [Remainder] float TimeDiff)
+        {
+            if (password == Program.modPassword)
+            {
+                Poll poll = Program.currentPolls[pollNumber - 1];
+                poll.endDate = poll.endDate.AddHours(TimeDiff);
+                Program.SavePolls(Program.currentPolls);
+                poll.countdownToken.Cancel();
+                var newToken = new CancellationTokenSource();
+                poll.countdownToken = newToken;
+                PollCountdown(Program.currentPolls[pollNumber - 1], newToken.Token);
+                await Program.UpdateLastMessages(Program.currentPolls[pollNumber - 1], false);
+            }
         }
 
         [Command("removepoll")]
@@ -337,7 +481,7 @@ namespace Gabot
             {
                 Program.currentPolls[pollIndex - 1].movieList.RemoveAt(movieIndex-1);
                 Console.WriteLine($"Movie number {movieIndex} removed from poll {pollIndex}!");
-                await Program.UpdateLastMessages(Program.currentPolls[pollIndex - 1]);
+                await Program.UpdateLastMessages(Program.currentPolls[pollIndex - 1], true);
                 Program.SavePolls(Program.currentPolls);
             }
         }
@@ -396,7 +540,7 @@ namespace Gabot
                 Poll poll = Program.currentPolls[pollIndex - 1];
                 await ShowPoll(poll, Context);
             }
-            else await Context.Channel.SendMessageAsync("Please add a number after the command.");
+            else await Context.User.SendMessageAsync("Please add a correct number after the command.");
         }
 
         [Command("listpolls")]
@@ -450,13 +594,30 @@ namespace Gabot
                     newMovie.votes.Add(Context.User.ToString());
                     Program.currentPolls[pollIndex].movieList.Add(newMovie);
                     Program.SavePolls(Program.currentPolls);
-                    await Program.UpdateLastMessages(poll);
+                    await Program.UpdateLastMessages(poll, true);
                 }
                 else await Context.User.SendMessageAsync($"Sorry {Context.User.Mention}, you've already added a movie in that poll. <3");
             }
             else await Context.User.SendMessageAsync($"Sorry {Context.User.Mention}, there are already 10 options in the poll, please remove one first.");
         }
 
+        [Command("editOption")]
+        //public async Task ShowPoll(Poll poll, SocketCommandContext Context)
+        public async Task EditMovie(int pollNumber, int movieNumber, string password, [Remainder]string movieTitle)
+        {
+            if (password == Program.modPassword)
+            {
+                if (Program.currentPolls[pollNumber-1] != null && Program.currentPolls[pollNumber-1].movieList[movieNumber-1] != null)
+                {
+                    Poll poll = Program.currentPolls[pollNumber - 1];
+                    int movieIndex = movieNumber - 1;
+                    poll.movieList[movieIndex].title = movieTitle;
+                    Program.SavePolls(Program.currentPolls);
+                    await Program.UpdateLastMessages(poll, false);
+                }
+                else await Context.Channel.SendMessageAsync("Password is incorrect.");
+            }
+        }
 
         [Command("forceaddoption")]
         public async Task ForceAddMovieAsync(int pollIndex, string password, [Remainder]string movieTitle)
@@ -474,10 +635,12 @@ namespace Gabot
                 newMovie.votes.Add(Context.User.ToString());
                 Program.currentPolls[pollIndex].movieList.Add(newMovie);
                 Program.SavePolls(Program.currentPolls);
-                await Program.UpdateLastMessages(poll);
+                await Program.UpdateLastMessages(poll, true);
             }
             else await Context.User.SendMessageAsync($"Sorry {Context.User.Mention}, there are already 10 options in the poll, please remove one first.");
         }
+
+
 
         public async Task ShowPoll(Poll poll, SocketCommandContext Context)
         {
@@ -495,11 +658,11 @@ namespace Gabot
             }
         }
 
-        public static async Task PollCountdown(Poll poll)
+        public static async Task PollCountdown(Poll poll, CancellationToken token)
         {
             if (poll.endDate > DateTime.Now)
             {
-                await Task.Delay(poll.endDate - poll.startDate);
+                await Task.Delay(poll.endDate - DateTime.Now, token);
                 await BlockOptions(poll, true);
                 await BlockVotes(poll, true);
                 var destinationChannel = Program.client.GetGuild(poll.createdInGuildId).GetTextChannel(poll.createdInChannelId);
@@ -531,6 +694,7 @@ namespace Gabot
             newPoll.title = title;
             newPoll.startDate = DateTime.Now;
             newPoll.endDate = newPoll.startDate.AddHours(days);
+            newPoll.countdownToken = new CancellationTokenSource();
             newPoll.movieList.Add(movie);
             newPoll.messageIDs = new List<ulong>();
             return newPoll;

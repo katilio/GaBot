@@ -4,6 +4,7 @@ using System.IO;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Collections;
 
@@ -25,6 +26,8 @@ namespace Gabot.Modules
         public List<ulong> messageIDs = new List<ulong>();
         public List<PostedMessage> postedMessages = new List<PostedMessage>();
         int position = -1;
+        [NonSerialized]
+        public CancellationTokenSource countdownToken;
         [NonSerialized]
         public RestUserMessage lastMessage;
 
