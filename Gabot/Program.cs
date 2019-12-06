@@ -116,8 +116,9 @@ namespace Gabot
                 if (poll.messageIDs.Contains(arg3.MessageId) && poll.blockVotes == false)
                 {
                     int emoteIndex = 0;
-                    //If the emote name can be parsed as an int
-                    if (int.TryParse(arg3.Emote.Name.ToString().Substring(0, 1), out emoteIndex))
+                    if (arg3.Emote.Name == "🔟") { emoteIndex = 10; }
+                    //If the emote name can be parsed as an int or it's 10, which can't be parsed
+                    if (emoteIndex == 10 || int.TryParse(arg3.Emote.Name.ToString().Substring(0, 1), out emoteIndex))
                     {
                         //If the user didn't add the movie
                         if (!(poll.movieList[emoteIndex-1].addedByUser == arg3.User.ToString()))
@@ -146,8 +147,9 @@ namespace Gabot
                 if (poll.messageIDs.Contains(arg3.MessageId) && poll.blockVotes == false && arg3.UserId != client.CurrentUser.Id)
                 {
                     int emoteIndex = 0;
-                    //If the emote name can be parsed as an int
-                    if (int.TryParse(arg3.Emote.Name.ToString().Substring(0, 1), out emoteIndex))
+                    if (arg3.Emote.Name == "🔟") { emoteIndex = 10; }
+                    //If the emote name can be parsed as an int or it's 10, which can't be parsed
+                    if (emoteIndex == 10 || int.TryParse(arg3.Emote.Name.ToString().Substring(0, 1), out emoteIndex))
                     {
                         //If the voting user hasn't voted for that movie yet
                         if (!poll.movieList[emoteIndex - 1].votes.Contains(arg3.User.ToString()))
@@ -203,7 +205,7 @@ namespace Gabot
                 if (!result.IsSuccess)
                 {
                     Console.WriteLine(result.ErrorReason);
-                    await context.Channel.SendMessageAsync("Command incorrect. Use *!help* or *!modhelp password* here or via DM for more info.");
+                    //await context.Channel.SendMessageAsync("Command incorrect. Use *!help* or *!modhelp password* here or via DM for more info.");
                 }
 
                 else if (message.Content.Contains("hello"))
@@ -213,11 +215,11 @@ namespace Gabot
             }
         }
 
-        public static async Task GetLastMessage(Poll poll)
-        {
-            var message = await client.GetGuild(parentGuildId).GetTextChannel(guildChannelId).GetMessageAsync(poll.messageIDs.Last());
-            poll.lastMessage = message as RestUserMessage;
-        }
+        //public static async Task GetLastMessage(Poll poll)
+        //{
+        //    var message = await client.GetGuild(parentGuildId).GetTextChannel(guildChannelId).GetMessageAsync(poll.messageIDs.Last());
+        //    poll.lastMessage = message as RestUserMessage;
+        //}
 
 
         public static Embed MakePollEmbed(Poll poll)
@@ -313,7 +315,7 @@ namespace Gabot
                     var bformatter = new System.Runtime.Serialization.Formatters.Binary.BinaryFormatter();
                     stream.Position = 0;
                     List<Poll> pollList = (List<Poll>)bformatter.Deserialize(stream);
-                    foreach (Poll poll in pollList) { GetLastMessage(poll); }
+                    //foreach (Poll poll in pollList) { GetLastMessage(poll); }
                     return pollList;
                 }
             }
@@ -379,11 +381,11 @@ namespace Gabot
             EmbedBuilder builder = new EmbedBuilder();
             builder.Title = "Command help";
             builder.ThumbnailUrl = Program.client.CurrentUser.GetAvatarUrl(ImageFormat.Png, 128);
-            builder.AddField("`!showpoll poll_number` - (All users, can be done through DM)", "Example: '***!showpoll 1***' - Displays indicated poll in channel. Can be used in DMs.", false);
+            builder.AddField("`!showpoll poll_number` - (All users, can be done through DM)", "Example: '***!showpoll 1***' - Displays indicated poll in channel. Can be used in DMs, but please note that votes through DMs WON'T be counted, and the message won't be updated when the poll changes.", false);
             builder.AddField("\u200B", "\u200B");
             builder.AddField("`!listpolls` - (All users, can be done through DM)", "Shows a list of all polls in the bot, including expired ones.", false);
             builder.AddField("\u200B", "\u200B");
-            builder.AddField("`!addoption poll_number Movie title` - (All users, can be done through DM)", "Example: '***!addoption 1 LOTR: The Two Towers***' Displays indicated poll in channel. Can be used in DMs.", false);
+            builder.AddField("`!addoption poll_number Movie title` - (All users, can be done through DM)", "Example: '***!addoption 1 LOTR: The Two Towers***' Adds a new option to the indicated poll, if less than 9 options exist. Can be used in DMs.", false);
             await Context.Channel.SendMessageAsync("", false, builder.Build());
             Console.WriteLine($"User {Context.User.Username} requested help at {DateTime.Now}.");
         }
@@ -412,9 +414,16 @@ namespace Gabot
                 builder.AddField("`!edittitle *poll number* 'password' 'New title'` - (Mod password required, please do via DM)", "Example: '***!edittitle 1 modpassword New poll title***' Edits the title of poll 1.", false);
                 builder.AddField("\u200B", "\u200B");
                 builder.AddField("`!edittime *poll number* 'password' 'amount of time'` - (Mod password required, please do via DM)", "Example: '***!edittime 3 modpassword 2***' Extends the duration of poll 3 by 2 hours. Use a negative number to remove time, and decimals if you need values smaller than an hour. '-1.5' will make the poll end 90 minutes earlier. Once expired, polls can be extended but votes and options need to be unlocked manually.", false);
+                builder.AddField("\u200B", "\u200B");
+                builder.AddField("`!editoption *poll number* *option number* 'password' 'New title'` - (Mod password required, please do via DM)", "Example: '***!editoption 3 5 modpassword Titanic***' Changes the title of option 5 in poll 3 to Titanic.", false);
                 await Context.Channel.SendMessageAsync("", false, builder.Build());
+                Console.WriteLine($"User {Context.User.Username} requested mod help at {DateTime.Now}.");
             }
-            else await Context.User.SendMessageAsync("Incorrect password. Please write the command again as *!modhelp Password*.");
+            else
+            {
+                await Context.User.SendMessageAsync("Incorrect password. Please write the command again as *!modhelp Password*.");
+                Console.WriteLine($"User {Context.User.Username} failed to request mod help at {DateTime.Now}.");
+            }
         }
 
         [Command("makepoll"), RequireUserPermission(Discord.GuildPermission.MentionEveryone)]
@@ -441,6 +450,7 @@ namespace Gabot
                 Program.currentPolls[pollNumber - 1].title = NewTitle;
                 Program.SavePolls(Program.currentPolls);
                 await Program.UpdateLastMessages(Program.currentPolls[pollNumber - 1], false);
+                Console.WriteLine($"User {Context.User.Username} edited title of poll {pollNumber-1} at {DateTime.Now}.");
             }
         }
 
@@ -457,6 +467,7 @@ namespace Gabot
                 poll.countdownToken = newToken;
                 PollCountdown(Program.currentPolls[pollNumber - 1], newToken.Token);
                 await Program.UpdateLastMessages(Program.currentPolls[pollNumber - 1], false);
+                Console.WriteLine($"User {Context.User.Username} edited the time of poll {pollNumber-1} for {TimeDiff} hours at {DateTime.Now}.");
             }
         }
 
@@ -470,6 +481,7 @@ namespace Gabot
                 await Context.Channel.SendMessageAsync($"Poll number {pollIndex} removed!");
                 Program.SavePolls(Program.currentPolls);
             }
+            Console.WriteLine($"User {Context.User.Username} removed poll number {pollIndex} at {DateTime.Now}.");
         }
 
         [Command("removeoption")]
@@ -484,6 +496,7 @@ namespace Gabot
                 await Program.UpdateLastMessages(Program.currentPolls[pollIndex - 1], true);
                 Program.SavePolls(Program.currentPolls);
             }
+            Console.WriteLine($"User {Context.User.Username} removed option {movieIndex} from poll {pollIndex} at {DateTime.Now}.");
         }
 
         [Command("lockoptions")]
@@ -495,6 +508,7 @@ namespace Gabot
                 Poll poll = Program.currentPolls[pollIndex - 1];
                 await BlockOptions(poll, true);
             }
+            Console.WriteLine($"User {Context.User.Username} locked options in poll {pollIndex} at {DateTime.Now}.");
         }
 
         [Command("lockvotes")]
@@ -505,6 +519,7 @@ namespace Gabot
             {
                 Poll poll = Program.currentPolls[pollIndex - 1];
                 await BlockVotes(poll, true);
+                Console.WriteLine($"User {Context.User.Username} locked votes in poll {pollIndex} at {DateTime.Now}.");
             }
         }
 
@@ -516,6 +531,7 @@ namespace Gabot
             {
                 Poll poll = Program.currentPolls[pollIndex - 1];
                 await BlockOptions(poll, false);
+                Console.WriteLine($"User {Context.User.Username} unlocked options in poll {pollIndex} at {DateTime.Now}.");
             }
         }
 
@@ -527,6 +543,7 @@ namespace Gabot
             {
                 Poll poll = Program.currentPolls[pollIndex - 1];
                 await BlockVotes(poll, false);
+                Console.WriteLine($"User {Context.User.Username} unlocked votes in poll {pollIndex} at {DateTime.Now}.");
             }
         }
 
@@ -536,11 +553,12 @@ namespace Gabot
         {
             if (int.TryParse(pollnumber, out int pollIndex))
             {
-                await Program.GetLastMessage(Program.currentPolls[pollIndex - 1]);
+                //await Program.GetLastMessage(Program.currentPolls[pollIndex - 1]);
                 Poll poll = Program.currentPolls[pollIndex - 1];
                 await ShowPoll(poll, Context);
+                Console.WriteLine($"User {Context.User.Username} requested to show poll {pollIndex} at {DateTime.Now}. in {Context.Channel.Name}");
             }
-            else await Context.User.SendMessageAsync("Please add a correct number after the command.");
+            else await Context.User.SendMessageAsync("Please add a correct number after the command. For example, '!showpoll 2' if you want to see Poll number 2.");
         }
 
         [Command("listpolls")]
@@ -567,6 +585,7 @@ namespace Gabot
                     pollNumber++;
                 }
                 await Context.Channel.SendMessageAsync("", false, builder.Build());
+                Console.WriteLine($"User {Context.User.Username} requested to see poll list at {DateTime.Now}. in {Context.Channel.Name}");
             }
             else await Context.Channel.SendMessageAsync("There are currently no active polls. Use !makepoll *length in hours* 'Poll title' *Movie title* to create a new one.");
         }
@@ -574,9 +593,9 @@ namespace Gabot
         [Command("addoption")]
         public async Task AddMovieAsync(int pollIndex, [Remainder]string movieTitle)
         {
-            if (Program.currentPolls.Count < 10 && Program.currentPolls[pollIndex-1].blockOptions == false)
+            pollIndex -= 1;
+            if (Program.currentPolls[pollIndex].movieList.Count < 10 && Program.currentPolls[pollIndex-1].blockOptions == false)
             {
-                pollIndex -= 1;
                 Poll poll = Program.currentPolls[pollIndex];
                 int moviesAdded = 0;
                 foreach (Movie movie in Program.currentPolls[pollIndex].movieList)
@@ -595,13 +614,14 @@ namespace Gabot
                     Program.currentPolls[pollIndex].movieList.Add(newMovie);
                     Program.SavePolls(Program.currentPolls);
                     await Program.UpdateLastMessages(poll, true);
+                    Console.WriteLine($"User {Context.User.Username} added option to poll {pollIndex} at {DateTime.Now}. in {Context.Channel.Name}");
                 }
                 else await Context.User.SendMessageAsync($"Sorry {Context.User.Mention}, you've already added a movie in that poll. <3");
             }
-            else await Context.User.SendMessageAsync($"Sorry {Context.User.Mention}, there are already 10 options in the poll, please remove one first.");
+            else await Context.User.SendMessageAsync($"Sorry {Context.User.Mention}, the maximum number of options has been reached and we can't add any more.");
         }
 
-        [Command("editOption")]
+        [Command("editoption")]
         //public async Task ShowPoll(Poll poll, SocketCommandContext Context)
         public async Task EditMovie(int pollNumber, int movieNumber, string password, [Remainder]string movieTitle)
         {
@@ -614,6 +634,7 @@ namespace Gabot
                     poll.movieList[movieIndex].title = movieTitle;
                     Program.SavePolls(Program.currentPolls);
                     await Program.UpdateLastMessages(poll, false);
+                    Console.WriteLine($"User {Context.User.Username} edited option {movieNumber-1} in poll {pollNumber-1} at {DateTime.Now}. in {Context.Channel.Name}");
                 }
                 else await Context.Channel.SendMessageAsync("Password is incorrect.");
             }
@@ -636,6 +657,7 @@ namespace Gabot
                 Program.currentPolls[pollIndex].movieList.Add(newMovie);
                 Program.SavePolls(Program.currentPolls);
                 await Program.UpdateLastMessages(poll, true);
+                Console.WriteLine($"User {Context.User.Username} force added option to poll {pollIndex} at {DateTime.Now}. in {Context.Channel.Name}");
             }
             else await Context.User.SendMessageAsync($"Sorry {Context.User.Mention}, there are already 10 options in the poll, please remove one first.");
         }
@@ -648,7 +670,7 @@ namespace Gabot
             Program.PopulatePostedMessages(poll, Context, message);
             Program.SavePolls(Program.currentPolls);
             int reactionIndex = 1;
-            string[] pollEmotes = new string[] { "1⃣", "2⃣", "3⃣", "4⃣", "5⃣", "6⃣", "7⃣", "8⃣", "9⃣", "🔟" };
+            string[] pollEmotes = new string[] { "1⃣", "2⃣", "3⃣", "4⃣", "5⃣", "6⃣", "7⃣", "8⃣", "9⃣", "🔟", "0️" };
             foreach (Movie movie in Program.currentPolls.Find(x => x.title == poll.title).movieList)
             {
                 //IEmote emote = Context.Guild.Emotes.First(x => x.Name == pollEmotes[reactionIndex]);
