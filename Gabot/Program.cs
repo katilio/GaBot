@@ -594,7 +594,7 @@ namespace Gabot
         public async Task AddMovieAsync(int pollIndex, [Remainder]string movieTitle)
         {
             pollIndex -= 1;
-            if (Program.currentPolls[pollIndex].movieList.Count < 10 && Program.currentPolls[pollIndex-1].blockOptions == false)
+            if (Program.currentPolls[pollIndex].movieList.Count < 10 && Program.currentPolls[pollIndex].blockOptions == false)
             {
                 Poll poll = Program.currentPolls[pollIndex];
                 int moviesAdded = 0;
